@@ -1,0 +1,189 @@
+name: Build DSH Offline Bundle
+
+on:
+  workflow_dispatch:
+    inputs:
+      extra_plugins:
+        description: "可选：额外 DSH npm 插件，一行一个（在 GitHub 上预装进离线包）"
+        required: false
+        type: string
+        default: ""
+  schedule:
+    - cron: "0 2 * * 0"
+
+permissions:
+  contents: read
+
+env:
+  DSH_VERSION: "0.1.1-rc.2"
+  DSH_WEBUI_VERSION: "0.2.7"
+  PNPM_VERSION: "11.22.0"
+
+jobs:
+  build-linux-x64:
+    name: Build Linux x86_64 offline bundle
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout builder repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: "${{ env.PNPM_VERSION }}"
+
+      - name: Prepare portable runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p bundle/runtime bundle/dsh-home bundle/bin bundle/offline-plugins
+          cp payload/runtime-package.json bundle/runtime/package.json
+          cp payload/runtime-pnpm-workspace.yaml bundle/runtime/pnpm-workspace.yaml
+          cp payload/start.sh bundle/start.sh
+          cp payload/install-plugin-offline.sh bundle/install-plugin-offline.sh
+          cp payload/verify.sh bundle/verify.sh
+          cp payload/README-OFFLINE.md bundle/README.md
+          cp payload/pnpm-wrapper.sh bundle/bin/pnpm
+          cp -L "$(command -v node)" bundle/bin/node
+          chmod +x bundle/start.sh bundle/install-plugin-offline.sh bundle/verify.sh bundle/bin/node bundle/bin/pnpm
+
+      - name: Install official DeepSeek Harness runtime
+        working-directory: bundle/runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          pnpm install --prod --frozen-lockfile=false --config.minimum-release-age=0
+          node node_modules/@deepseek-ai/dsh/lib/bin.js --version
+
+      - name: Install dsh-web-ui aggregate package
+        shell: bash
+        run: |
+          set -euo pipefail
+          export DSH_HOME="$GITHUB_WORKSPACE/bundle/dsh-home"
+          export PATH="$GITHUB_WORKSPACE/bundle/bin:$PATH"
+          CLI="$GITHUB_WORKSPACE/bundle/runtime/node_modules/@deepseek-ai/dsh/lib/bin.js"
+          PKG="@linxin666/dsh-web-ui-all@$DSH_WEBUI_VERSION"
+
+          # pnpm 11 requires explicit approval for native dependencies.
+          # First add populates the dependency graph; if builds are held, approve and retry.
+          set +e
+          "$GITHUB_WORKSPACE/bundle/bin/node" "$CLI" \
+            plugin --profile web add --config.minimum-release-age=0 "$PKG"
+          rc=$?
+          set -e
+          if [[ $rc -ne 0 ]]; then
+            "$GITHUB_WORKSPACE/bundle/bin/node" "$CLI" \
+              plugin --profile web approve-builds --all
+            "$GITHUB_WORKSPACE/bundle/bin/node" "$CLI" \
+              plugin --profile web add --config.minimum-release-age=0 "$PKG"
+          fi
+
+      - name: Install optional extra plugins
+        if: ${{ inputs.extra_plugins != '' }}
+        shell: bash
+        env:
+          EXTRA_PLUGINS: ${{ inputs.extra_plugins }}
+        run: |
+          set -euo pipefail
+          export DSH_HOME="$GITHUB_WORKSPACE/bundle/dsh-home"
+          export PATH="$GITHUB_WORKSPACE/bundle/bin:$PATH"
+          CLI="$GITHUB_WORKSPACE/bundle/runtime/node_modules/@deepseek-ai/dsh/lib/bin.js"
+
+          while IFS= read -r plugin; do
+            plugin="${plugin%%#*}"
+            plugin="$(echo "$plugin" | xargs)"
+            [[ -z "$plugin" ]] && continue
+            echo "Preinstalling extra plugin: $plugin"
+            set +e
+            "$GITHUB_WORKSPACE/bundle/bin/node" "$CLI" \
+              plugin --profile web add --config.minimum-release-age=0 "$plugin"
+            rc=$?
+            set -e
+            if [[ $rc -ne 0 ]]; then
+              "$GITHUB_WORKSPACE/bundle/bin/node" "$CLI" \
+                plugin --profile web approve-builds --all
+              "$GITHUB_WORKSPACE/bundle/bin/node" "$CLI" \
+                plugin --profile web add --config.minimum-release-age=0 "$plugin"
+            fi
+          done <<< "$EXTRA_PLUGINS"
+
+      - name: Record build provenance
+        shell: bash
+        run: |
+          set -euo pipefail
+          WEBUI_COMMIT="$(git ls-remote https://github.com/zhu1090093659/dsh-web-ui.git refs/heads/dev | cut -f1)"
+          cat > bundle/BUILD-INFO.txt <<EOF
+          Built at (UTC): $(date -u +'%Y-%m-%dT%H:%M:%SZ')
+          Target: linux-x64 (ubuntu-22.04 compatible)
+          Node: $(node --version)
+          pnpm: $(pnpm --version)
+          DeepSeek Harness: $DSH_VERSION
+          dsh-web-ui repository: https://github.com/zhu1090093659/dsh-web-ui.git
+          dsh-web-ui dev commit: $WEBUI_COMMIT
+          dsh-web-ui aggregate package: @linxin666/dsh-web-ui-all@$DSH_WEBUI_VERSION
+          Credentials embedded: none
+          EOF
+
+      - name: Verify profile and plugin configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          bundle/verify.sh
+          PROFILE=bundle/dsh-home/profiles/web/package.json
+          python3 - <<'PY'
+          import json
+          p='bundle/dsh-home/profiles/web/package.json'
+          d=json.load(open(p))
+          bundles=d['dsh']['profile']['bundles']
+          assert '@linxin666/dsh-web-ui-all' in bundles, bundles
+          print('Bundles:', bundles)
+          print('Dependencies:', d.get('dependencies', {}))
+          PY
+
+      - name: Start WebUI smoke test
+        shell: bash
+        run: |
+          set -euo pipefail
+          DSH_HOST=127.0.0.1 DSH_PORT=13080 DSH_WORKSPACE="$GITHUB_WORKSPACE" \
+            bundle/start.sh > /tmp/dsh-smoke.log 2>&1 &
+          pid=$!
+          trap 'kill $pid 2>/dev/null || true' EXIT
+
+          ok=0
+          for _ in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:13080/ > /tmp/dsh-index.html; then
+              ok=1
+              break
+            fi
+            sleep 2
+          done
+          cat /tmp/dsh-smoke.log
+          [[ $ok -eq 1 ]] || { echo "WebUI failed to become ready" >&2; exit 1; }
+          grep -q '<title>DeepSeek Harness</title>' /tmp/dsh-index.html
+          ! grep -q 'Failed to load plugins' /tmp/dsh-smoke.log
+          echo "Smoke test passed: HTTP 200 and plugins loaded."
+
+      - name: Package portable artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          tar -czf dsh-offline-linux-x64.tar.gz -C bundle .
+          sha256sum dsh-offline-linux-x64.tar.gz > dsh-offline-linux-x64.tar.gz.sha256
+          ls -lh dsh-offline-linux-x64.tar.gz dsh-offline-linux-x64.tar.gz.sha256
+
+      - name: Upload offline artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dsh-offline-linux-x64
+          path: |
+            dsh-offline-linux-x64.tar.gz
+            dsh-offline-linux-x64.tar.gz.sha256
+          retention-days: 30
+          if-no-files-found: error
