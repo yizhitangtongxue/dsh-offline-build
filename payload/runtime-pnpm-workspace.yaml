@@ -2,7 +2,6 @@ packages:
   - .
 
 nodeLinker: isolated
-autoInstallPeers: false
 allowBuilds:
   '@deepseek-ai/dsh-subprocess-local': true
   '@google/genai': true
