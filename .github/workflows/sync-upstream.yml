@@ -17,7 +17,7 @@ jobs:
   sync:
     name: Check npm upstream and rebuild when changed
     runs-on: ubuntu-22.04
-    timeout-minutes: 10
+    timeout-minutes: 20
 
     steps:
       - name: Checkout repository
@@ -28,6 +28,67 @@ jobs:
       - name: Query official npm registry and update pins
         id: sync
         run: python3 .github/scripts/sync_upstream.py
+
+      - name: Setup Node.js 22 for candidate canary
+        if: steps.sync.outputs.changed == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Setup pnpm for candidate canary
+        if: steps.sync.outputs.changed == 'true'
+        uses: pnpm/action-setup@v4
+        with:
+          version: "11.22.0"
+
+      - name: Install and start candidate in Linux canary
+        id: canary
+        if: steps.sync.outputs.changed == 'true'
+        env:
+          WEBUI_VERSION: ${{ steps.sync.outputs.webui_version }}
+        run: |
+          set -euo pipefail
+          CANARY="$RUNNER_TEMP/dsh-upstream-canary"
+          mkdir -p "$CANARY/runtime" "$CANARY/dsh-home"
+          cp payload/runtime-package.json "$CANARY/runtime/package.json"
+          cp payload/runtime-pnpm-workspace.yaml "$CANARY/runtime/pnpm-workspace.yaml"
+
+          pushd "$CANARY/runtime"
+          pnpm install --prod --frozen-lockfile=false --config.minimum-release-age=0
+          popd
+
+          export DSH_HOME="$CANARY/dsh-home"
+          CLI="$CANARY/runtime/node_modules/@deepseek-ai/dsh/lib/bin.js"
+          if ! node "$CLI" plugin --profile web add --config.minimum-release-age=0 \
+            "@linxin666/dsh-web-ui-all@$WEBUI_VERSION"; then
+            node "$CLI" plugin --profile web approve-builds --all
+            node "$CLI" plugin --profile web add --config.minimum-release-age=0 \
+              "@linxin666/dsh-web-ui-all@$WEBUI_VERSION"
+          fi
+
+          node "$CLI" --profile web --dump-config > "$CANARY/config.yml"
+          grep -q web-ui-task-board "$CANARY/config.yml"
+          grep -q web-ui-git-graph "$CANARY/config.yml"
+          grep -q web-ui-plugin-manager "$CANARY/config.yml"
+          grep -q web-ui-better-sidebar "$CANARY/config.yml"
+
+          node "$CLI" web --host 127.0.0.1 --port 13087 --no-open \
+            > "$CANARY/web.log" 2>&1 &
+          pid=$!
+          trap 'kill "$pid" 2>/dev/null || true' EXIT
+          ready=0
+          for _ in $(seq 1 45); do
+            if curl -fsS http://127.0.0.1:13087/ > "$CANARY/index.html"; then
+              ready=1
+              break
+            fi
+            kill -0 "$pid" 2>/dev/null || break
+            sleep 2
+          done
+          [[ $ready -eq 1 ]] || { cat "$CANARY/web.log" >&2; exit 1; }
+          grep -q '<title>DeepSeek Harness</title>' "$CANARY/index.html"
+          ! grep -q 'Failed to load plugins' "$CANARY/web.log"
+          echo "Candidate canary passed: DSH + WebUI $WEBUI_VERSION"
 
       - name: Show synchronized changes
         if: steps.sync.outputs.changed == 'true'
@@ -61,6 +122,7 @@ jobs:
           NEW_DSH: ${{ steps.sync.outputs.dsh_version }}
           OLD_WEBUI: ${{ steps.sync.outputs.old_webui_version }}
           NEW_WEBUI: ${{ steps.sync.outputs.webui_version }}
+          CANARY: ${{ steps.canary.outcome }}
         run: |
           {
             echo "## DSH upstream synchronization"
@@ -68,8 +130,12 @@ jobs:
             echo "- Changed: ${CHANGED:-unknown}"
             echo "- DSH: ${OLD_DSH:-unknown} → ${NEW_DSH:-unknown}"
             echo "- WebUI bundle: ${OLD_WEBUI:-unknown} → ${NEW_WEBUI:-unknown}"
-            if [[ "${CHANGED:-false}" == true ]]; then
+            if [[ "${CHANGED:-false}" == true && "${CANARY:-skipped}" == success ]]; then
+              echo "- Canary: passed"
               echo "- Result: pins committed and all offline bundles dispatched"
+            elif [[ "${CHANGED:-false}" == true ]]; then
+              echo "- Canary: ${CANARY:-failed}"
+              echo "- Result: candidate rejected; main pins were not changed"
             else
               echo "- Result: already current; no commit or build required"
             fi

@@ -25,7 +25,7 @@ ARM64 版本由 GitHub Actions 的原生 `ubuntu-24.04-arm` Runner 构建，在�
 - Linux x86_64 或 ARM64；
 - Node.js 22 便携运行时；
 - `@deepseek-ai/dsh@0.1.1-rc.2`；
-- `@linxin666/dsh-web-ui-all@0.2.9`；
+- `@linxin666/dsh-web-ui-all@0.2.7`；
 - 任务看板、Git 图谱、插件管理器、右侧栏、皮肤中心、远程 UI、SSH 等聚合插件；
 - 已构建的原生依赖；
 - 离线启动、验证和本地插件安装脚本。
@@ -57,7 +57,7 @@ ARM64 版本由 GitHub Actions 的原生 `ubuntu-24.04-arm` Runner 构建，在�
 - `@deepseek-ai/dsh`；
 - `@linxin666/dsh-web-ui-all`。
 
-发现新版本时，`github-actions[bot]` 会同时更新构建 workflow、运行时 `package.json`、Dockerfile 和本文档中的固定版本号，提交到 `main`，然后自动触发所有 Linux、ARM64、Windows 与 Docker 离线包重建。版本没有变化时不会提交，也不会重复构建。
+发现新版本时，GitHub Runner 会先执行 Linux Canary：真实安装 DSH 与 WebUI 候选版、加载核心插件并启动 HTTP 服务。Canary 通过后，`github-actions[bot]` 才会同时更新普通版本配置、运行时 `package.json`、Dockerfile 和本文档中的固定版本号，提交到 `main`，然后自动触发所有 Linux、ARM64、Windows 与 Docker 离线包重建。候选版安装或启动失败时会被拒绝，不会污染 `main`；版本没有变化时也不会提交或重复构建。
 
 需要立即检查时，可在 Actions 中手动运行 **Sync Upstream DSH Versions**。构建仍使用提交到仓库的固定版本号，因此每个历史提交都可复现。
 
