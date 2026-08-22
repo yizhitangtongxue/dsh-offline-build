@@ -3,7 +3,7 @@ name: Sync Upstream DSH Versions
 on:
   workflow_dispatch:
   schedule:
-    - cron: "23 */6 * * *"
+    - cron: "23 * * * *"
 
 permissions:
   contents: write

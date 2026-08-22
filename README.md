@@ -54,7 +54,7 @@ ARM64 版本由 GitHub Actions 的原生 `ubuntu-24.04-arm` Runner 构建，在�
 
 ## 自动跟踪上游更新
 
-`Sync Upstream DSH Versions` workflow 每 6 小时查询一次 npm 官方 Registry 的 `latest` 标签：
+`Sync Upstream DSH Versions` workflow 每小时查询一次 npm 官方 Registry 的 `latest` 标签：
 
 - `@deepseek-ai/dsh`；
 - `@linxin666/dsh-web-ui-all`。
