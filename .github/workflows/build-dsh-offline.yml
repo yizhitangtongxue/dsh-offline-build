@@ -642,7 +642,10 @@ jobs:
             if ($logs -match 'Failed to load plugins') { throw 'Plugin load failure in Windows logs' }
             Write-Host 'Windows smoke test passed: HTTP 200 and plugins loaded.'
           } finally {
-            if (-not $proc.HasExited) { Stop-Process -Id $proc.Id -Force }
+            if (-not $proc.HasExited) {
+              & taskkill.exe /PID $proc.Id /T /F | Out-Null
+              Start-Sleep -Seconds 1
+            }
           }
 
       - name: Package and clean-room test Windows artifact
@@ -701,7 +704,10 @@ jobs:
             if ($cleanLogs -match 'Failed to load plugins') { throw 'Extracted bundle plugin load failure' }
             Write-Host 'Clean-room Windows artifact smoke test passed.'
           } finally {
-            if (-not $cleanProc.HasExited) { Stop-Process -Id $cleanProc.Id -Force }
+            if (-not $cleanProc.HasExited) {
+              & taskkill.exe /PID $cleanProc.Id /T /F | Out-Null
+              Start-Sleep -Seconds 1
+            }
           }
 
           $hash = (Get-FileHash -Algorithm SHA256 $Archive).Hash.ToLowerInvariant()
