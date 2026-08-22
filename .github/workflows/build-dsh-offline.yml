@@ -651,6 +651,18 @@ jobs:
           $ErrorActionPreference = 'Stop'
           $SevenZip = 'C:\Program Files\7-Zip\7z.exe'
           if (-not (Test-Path $SevenZip)) { throw '7-Zip not found on runner' }
+
+          # DSH creates this runtime fallback as a directory link. 7-Zip follows
+          # Windows junctions and would archive it as a normal directory, which DSH
+          # intentionally rejects after extraction. Remove only this managed link;
+          # DSH recreates it on first launch and the clean-room test verifies that.
+          $ManagedFallback = 'bundle-windows\dsh-home\profiles\node_modules\@deepseek-ai\dsh'
+          if (Test-Path $ManagedFallback) {
+            $item = Get-Item $ManagedFallback -Force
+            Write-Host "Removing DSH-managed fallback before packaging: LinkType=$($item.LinkType)"
+            Remove-Item $ManagedFallback -Force
+          }
+
           $Archive = Join-Path $env:GITHUB_WORKSPACE 'dsh-offline-windows-x64.7z'
           & $SevenZip a -t7z -mx=3 $Archive ".\bundle-windows\*"
           if ($LASTEXITCODE -ne 0) { throw '7-Zip packaging failed' }
