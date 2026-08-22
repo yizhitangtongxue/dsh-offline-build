@@ -1,0 +1,76 @@
+name: Sync Upstream DSH Versions
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "23 */6 * * *"
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: sync-dsh-upstream
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    name: Check npm upstream and rebuild when changed
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Query official npm registry and update pins
+        id: sync
+        run: python3 .github/scripts/sync_upstream.py
+
+      - name: Show synchronized changes
+        if: steps.sync.outputs.changed == 'true'
+        run: git diff --check && git diff --stat && git diff
+
+      - name: Commit upstream version update
+        if: steps.sync.outputs.changed == 'true'
+        env:
+          DSH_VERSION: ${{ steps.sync.outputs.dsh_version }}
+          WEBUI_VERSION: ${{ steps.sync.outputs.webui_version }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .github/workflows/build-dsh-offline.yml payload/runtime-package.json Dockerfile README.md
+          git diff --cached --check
+          git commit -m "chore: sync DSH ${DSH_VERSION} and WebUI ${WEBUI_VERSION}"
+          git push origin HEAD:main
+
+      - name: Trigger all offline bundle builds
+        if: steps.sync.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run build-dsh-offline.yml --repo "$GITHUB_REPOSITORY" --ref main
+
+      - name: Write synchronization summary
+        if: always()
+        env:
+          CHANGED: ${{ steps.sync.outputs.changed }}
+          OLD_DSH: ${{ steps.sync.outputs.old_dsh_version }}
+          NEW_DSH: ${{ steps.sync.outputs.dsh_version }}
+          OLD_WEBUI: ${{ steps.sync.outputs.old_webui_version }}
+          NEW_WEBUI: ${{ steps.sync.outputs.webui_version }}
+        run: |
+          {
+            echo "## DSH upstream synchronization"
+            echo
+            echo "- Changed: ${CHANGED:-unknown}"
+            echo "- DSH: ${OLD_DSH:-unknown} → ${NEW_DSH:-unknown}"
+            echo "- WebUI bundle: ${OLD_WEBUI:-unknown} → ${NEW_WEBUI:-unknown}"
+            if [[ "${CHANGED:-false}" == true ]]; then
+              echo "- Result: pins committed and all offline bundles dispatched"
+            else
+              echo "- Result: already current; no commit or build required"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"

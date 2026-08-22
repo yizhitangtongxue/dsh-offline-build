@@ -50,6 +50,17 @@ ARM64 版本由 GitHub Actions 的原生 `ubuntu-24.04-arm` Runner 构建，在�
    - `dsh-offline-docker-linux-arm64`：ARM64 Docker 离线镜像；
    - `dsh-offline-windows-x64`：Windows x86_64 非 Docker 便携包。
 
+## 自动跟踪上游更新
+
+`Sync Upstream DSH Versions` workflow 每 6 小时查询一次 npm 官方 Registry 的 `latest` 标签：
+
+- `@deepseek-ai/dsh`；
+- `@linxin666/dsh-web-ui-all`。
+
+发现新版本时，`github-actions[bot]` 会同时更新构建 workflow、运行时 `package.json`、Dockerfile 和本文档中的固定版本号，提交到 `main`，然后自动触发所有 Linux、ARM64、Windows 与 Docker 离线包重建。版本没有变化时不会提交，也不会重复构建。
+
+需要立即检查时，可在 Actions 中手动运行 **Sync Upstream DSH Versions**。构建仍使用提交到仓库的固定版本号，因此每个历史提交都可复现。
+
 ## 内网运行：便携压缩包
 
 解压下载的 Artifact，再解压其中的 tar.gz：
