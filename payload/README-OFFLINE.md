@@ -22,13 +22,13 @@ chmod +x start.sh bin/node bin/pnpm install-plugin-offline.sh
 
 默认地址：`http://127.0.0.1:3080`
 
-自定义：
+自定义端口和工作区：
 
 ```bash
-DSH_HOST=0.0.0.0 DSH_PORT=3080 DSH_WORKSPACE=/path/to/project ./start.sh
+DSH_PORT=3080 DSH_WORKSPACE=/path/to/project ./start.sh
 ```
 
-当绑定 `0.0.0.0` 时，请只在可信内网使用，并配置防火墙或反向代理认证。
+官方 DSH 为防止远程代码执行，便携版不允许直接绑定 `0.0.0.0`。需要可信内网其他设备访问时，使用本仓库的 Docker 镜像版；镜像内置 Nginx 反向代理。
 
 ## 离线安装其他插件
 

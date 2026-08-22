@@ -6,7 +6,6 @@ services:
     ports:
       - "3080:3080"
     environment:
-      DSH_HOST: 0.0.0.0
       DSH_PORT: 3080
       DSH_WORKSPACE: /workspace
     volumes:

@@ -17,10 +17,27 @@ CLI=/opt/dsh/runtime/node_modules/@deepseek-ai/dsh/lib/bin.js
 
 echo "Workspace: $(pwd)"
 echo "DSH_HOME: $DSH_HOME"
-echo "Web UI: http://${DSH_HOST:-0.0.0.0}:${DSH_PORT:-3080}"
+echo "DSH internal: http://127.0.0.1:3081"
+echo "Web UI via Nginx: http://0.0.0.0:3080"
 echo "API Key 不在镜像中，请在 WebUI 设置 → 模型中配置。"
 
-exec node "$CLI" web \
-  --host "${DSH_HOST:-0.0.0.0}" \
-  --port "${DSH_PORT:-3080}" \
-  --no-open "$@"
+node "$CLI" web --host 127.0.0.1 --port 3081 --no-open "$@" &
+DSH_PID=$!
+
+cleanup() {
+  kill "$DSH_PID" 2>/dev/null || true
+  wait "$DSH_PID" 2>/dev/null || true
+}
+trap cleanup EXIT INT TERM
+
+# Nginx 对外监听 3080，并把请求与 WebSocket 转发给仅监听本地的 DSH。
+nginx -c /etc/nginx/nginx.conf -g 'daemon off;' &
+NGINX_PID=$!
+
+set +e
+wait -n "$DSH_PID" "$NGINX_PID"
+rc=$?
+set -e
+kill "$DSH_PID" "$NGINX_PID" 2>/dev/null || true
+wait "$DSH_PID" "$NGINX_PID" 2>/dev/null || true
+exit "$rc"

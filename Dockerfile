@@ -48,17 +48,17 @@ ARG DSH_VERSION=0.1.1-rc.2
 ARG DSH_WEBUI_VERSION=0.2.7
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      ca-certificates curl git openssh-client tini \
+      ca-certificates curl git openssh-client tini nginx-light \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /opt/dsh/runtime /opt/dsh/runtime
 COPY --from=builder /opt/dsh-seed /opt/dsh-seed
 COPY docker/entrypoint.sh /usr/local/bin/dsh-entrypoint
+COPY docker/nginx.conf /etc/nginx/nginx.conf
 RUN chmod +x /usr/local/bin/dsh-entrypoint \
     && ln -s /opt/dsh/runtime/node_modules/pnpm/bin/pnpm.cjs /usr/local/bin/pnpm
 
 ENV DSH_HOME=/data
-ENV DSH_HOST=0.0.0.0
 ENV DSH_PORT=3080
 ENV DSH_WORKSPACE=/workspace
 ENV PATH=/opt/dsh/runtime/node_modules/.bin:${PATH}
