@@ -1,0 +1,19 @@
+services:
+  dsh-webui:
+    image: dsh-offline-webui:latest
+    container_name: dsh-webui
+    restart: unless-stopped
+    ports:
+      - "3080:3080"
+    environment:
+      DSH_HOST: 0.0.0.0
+      DSH_PORT: 3080
+      DSH_WORKSPACE: /workspace
+    volumes:
+      # 把 ./workspace 替换为需要让 DSH 操作的宿主机目录
+      - ./workspace:/workspace
+      # 保存模型配置、会话和插件 profile
+      - dsh-data:/data
+
+volumes:
+  dsh-data:

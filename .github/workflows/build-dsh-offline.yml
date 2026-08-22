@@ -187,3 +187,103 @@ jobs:
             dsh-offline-linux-x64.tar.gz.sha256
           retention-days: 30
           if-no-files-found: error
+
+  build-docker-linux-x64:
+    name: Build and verify Docker offline image
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout builder repository
+        uses: actions/checkout@v4
+
+      - name: Write optional extra plugin list
+        shell: bash
+        env:
+          EXTRA_PLUGINS: ${{ inputs.extra_plugins }}
+        run: |
+          set -euo pipefail
+          printf '%s\n' "${EXTRA_PLUGINS:-}" > docker/extra-plugins.txt
+          echo "Extra plugin lines: $(grep -cv '^\s*$' docker/extra-plugins.txt || true)"
+
+      - name: Build Docker image
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker build \
+            --build-arg DSH_VERSION="$DSH_VERSION" \
+            --build-arg DSH_WEBUI_VERSION="$DSH_WEBUI_VERSION" \
+            --tag dsh-offline-webui:latest \
+            --tag "dsh-offline-webui:${DSH_VERSION}" \
+            .
+          docker image inspect dsh-offline-webui:latest \
+            --format 'image={{.Id}} size={{.Size}} bytes'
+
+      - name: Verify container and workspace mount
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p docker-test-workspace
+          printf 'mounted-from-host\n' > docker-test-workspace/MOUNT_TEST.txt
+          docker volume create dsh-test-data >/dev/null
+
+          docker run -d --name dsh-webui-test \
+            -p 13082:3080 \
+            -v "$GITHUB_WORKSPACE/docker-test-workspace:/workspace" \
+            -v dsh-test-data:/data \
+            dsh-offline-webui:latest >/tmp/dsh-container-id
+
+          cleanup() {
+            docker logs dsh-webui-test || true
+            docker rm -f dsh-webui-test >/dev/null 2>&1 || true
+            docker volume rm dsh-test-data >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+
+          ok=0
+          for _ in $(seq 1 45); do
+            if curl --fail --silent http://127.0.0.1:13082/ > /tmp/dsh-docker-index.html; then
+              ok=1
+              break
+            fi
+            sleep 2
+          done
+          [[ $ok -eq 1 ]] || { echo "Docker WebUI failed to become ready" >&2; exit 1; }
+          grep -q '<title>DeepSeek Harness</title>' /tmp/dsh-docker-index.html
+          docker exec dsh-webui-test test -f /workspace/MOUNT_TEST.txt
+          [[ "$(docker exec dsh-webui-test cat /workspace/MOUNT_TEST.txt)" = mounted-from-host ]]
+          docker exec dsh-webui-test test -f /data/profiles/web/package.json
+          docker exec dsh-webui-test grep -q '@linxin666/dsh-web-ui-all' /data/profiles/web/package.json
+          ! docker logs dsh-webui-test 2>&1 | grep -q 'Failed to load plugins'
+          echo "Docker test passed: HTTP 200, WebUI loaded, workspace mount visible."
+
+      - name: Check image contains no credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker history --no-trunc dsh-offline-webui:latest > /tmp/docker-history.txt
+          if grep -E 'github_pat_|ghp_[A-Za-z0-9]|DEEPSEEK_API_KEY=' /tmp/docker-history.txt; then
+            echo "Credential-like value found in image history" >&2
+            exit 1
+          fi
+          echo "No credential values found in Docker history."
+
+      - name: Export offline Docker image
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker save dsh-offline-webui:latest | gzip -1 > dsh-offline-docker-linux-x64.tar.gz
+          sha256sum dsh-offline-docker-linux-x64.tar.gz > dsh-offline-docker-linux-x64.tar.gz.sha256
+          cp docker-compose.yml docker-compose.offline.yml
+          ls -lh dsh-offline-docker-linux-x64.tar.gz dsh-offline-docker-linux-x64.tar.gz.sha256
+
+      - name: Upload Docker image artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dsh-offline-docker-linux-x64
+          path: |
+            dsh-offline-docker-linux-x64.tar.gz
+            dsh-offline-docker-linux-x64.tar.gz.sha256
+            docker-compose.offline.yml
+          retention-days: 30
+          if-no-files-found: error

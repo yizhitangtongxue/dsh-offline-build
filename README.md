@@ -10,6 +10,13 @@
 
 ## 当前构建内容
 
+每次 Actions 会同时生成两个版本：
+
+1. **便携压缩包** `dsh-offline-linux-x64`：无需 Docker，解压后运行 `start.sh`；
+2. **Docker 离线镜像** `dsh-offline-docker-linux-x64`：内网执行 `docker load` 后运行。
+
+共同包含：
+
 - Linux x86_64；
 - Node.js 22 便携运行时；
 - `@deepseek-ai/dsh@0.1.1-rc.2`；
@@ -30,10 +37,12 @@
 2. 选择 **Build DSH Offline Bundle**；
 3. 点击 **Run workflow**；
 4. 可在 `extra_plugins` 中填写希望预装的额外 npm 插件，一行一个；
-5. 等待构建与真实 WebUI 启动测试通过；
-6. 下载 Artifact：`dsh-offline-linux-x64`。
+5. 等待两个任务完成真实 WebUI 启动测试；
+6. 按需要下载 Artifact：
+   - `dsh-offline-linux-x64`：便携压缩包；
+   - `dsh-offline-docker-linux-x64`：Docker 离线镜像。
 
-## 内网运行
+## 内网运行：便携压缩包
 
 解压下载的 Artifact，再解压其中的 tar.gz：
 
@@ -55,6 +64,56 @@ DSH_HOST=0.0.0.0 DSH_PORT=3080 ./start.sh
 ```
 
 请配合内网防火墙或反向代理认证。
+
+## 内网运行：Docker 离线镜像
+
+校验并导入镜像：
+
+```bash
+sha256sum -c dsh-offline-docker-linux-x64.tar.gz.sha256
+gzip -dc dsh-offline-docker-linux-x64.tar.gz | docker load
+```
+
+挂载一个宿主机目录到容器的 `/workspace`：
+
+```bash
+mkdir -p /srv/dsh-workspace
+
+docker run -d \
+  --name dsh-webui \
+  --restart unless-stopped \
+  -p 3080:3080 \
+  -v /srv/dsh-workspace:/workspace \
+  -v dsh-data:/data \
+  dsh-offline-webui:latest
+```
+
+- `/srv/dsh-workspace`：你希望 DSH 读取和修改的宿主机目录，可换成任意绝对路径；
+- `/workspace`：容器内工作区；
+- `dsh-data:/data`：持久保存模型配置、会话和插件 profile；
+- WebUI：`http://内网服务器IP:3080`。
+
+查看日志：
+
+```bash
+docker logs -f dsh-webui
+```
+
+停止与再次启动：
+
+```bash
+docker stop dsh-webui
+docker start dsh-webui
+```
+
+也可以使用 Artifact 附带的 Compose 文件：
+
+```bash
+mkdir -p workspace
+docker compose -f docker-compose.offline.yml up -d
+```
+
+Compose 默认挂载当前目录下的 `./workspace` 到容器 `/workspace`。
 
 ## 安装其他插件
 

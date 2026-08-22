@@ -1,0 +1,3 @@
+# GitHub Actions 会在构建时用 workflow_dispatch 的 extra_plugins 覆盖此文件。
+# 每行一个额外 npm 插件，例如：
+# some-dsh-plugin@1.2.3
