@@ -652,15 +652,16 @@ jobs:
           $SevenZip = 'C:\Program Files\7-Zip\7z.exe'
           if (-not (Test-Path $SevenZip)) { throw '7-Zip not found on runner' }
 
-          # DSH creates this runtime fallback as a directory link. 7-Zip follows
-          # Windows junctions and would archive it as a normal directory, which DSH
-          # intentionally rejects after extraction. Remove only this managed link;
-          # DSH recreates it on first launch and the clean-room test verifies that.
-          $ManagedFallback = 'bundle-windows\dsh-home\profiles\node_modules\@deepseek-ai\dsh'
+          # DSH creates profiles\node_modules as a set of runtime fallback
+          # directory links. 7-Zip follows Windows junctions and would archive
+          # them as normal directories, which DSH intentionally rejects after
+          # extraction. The actual web profile and plugins live separately in
+          # profiles\web, so remove only this generated fallback directory. DSH
+          # recreates every link on first launch; the clean-room test verifies it.
+          $ManagedFallback = 'bundle-windows\dsh-home\profiles\node_modules'
           if (Test-Path $ManagedFallback) {
-            $item = Get-Item $ManagedFallback -Force
-            Write-Host "Removing DSH-managed fallback before packaging: LinkType=$($item.LinkType)"
-            Remove-Item $ManagedFallback -Force
+            Write-Host 'Moving DSH-managed profile fallback links outside the archive'
+            Move-Item $ManagedFallback '.dsh-generated-fallback'
           }
 
           $Archive = Join-Path $env:GITHUB_WORKSPACE 'dsh-offline-windows-x64.7z'
