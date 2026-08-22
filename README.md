@@ -10,12 +10,13 @@
 
 ## 当前构建内容
 
-每次 Actions 会同时生成四个版本：
+每次 Actions 会同时生成五个版本：
 
 1. **x86_64 便携压缩包** `dsh-offline-linux-x64`：无需 Docker，解压后运行 `start.sh`；
 2. **ARM64 便携压缩包** `dsh-offline-linux-arm64`：适用于 ARM64 Linux，解压后运行 `start.sh`；
 3. **x86_64 Docker 离线镜像** `dsh-offline-docker-linux-x64`；
-4. **ARM64 Docker 离线镜像** `dsh-offline-docker-linux-arm64`。
+4. **ARM64 Docker 离线镜像** `dsh-offline-docker-linux-arm64`；
+5. **Windows x86_64 便携包** `dsh-offline-windows-x64`：在 Windows 10/11 解压后运行 `verify.cmd` 和 `start.cmd`。
 
 ARM64 版本由 GitHub Actions 的原生 `ubuntu-24.04-arm` Runner 构建，在真实 ARM64 CPU 上重新安装、编译原生依赖并启动 WebUI 验证，不使用 QEMU，也不是把 x86_64 包简单改名。
 
@@ -41,12 +42,13 @@ ARM64 版本由 GitHub Actions 的原生 `ubuntu-24.04-arm` Runner 构建，在�
 2. 选择 **Build DSH Offline Bundle**；
 3. 点击 **Run workflow**；
 4. 可在 `extra_plugins` 中填写希望预装的额外 npm 插件，一行一个；
-5. 等待三个构建任务完成真实 WebUI 启动测试；
+5. 等待四个构建任务完成真实 WebUI 启动测试；
 6. 按机器架构和运行方式下载 Artifact：
    - `dsh-offline-linux-x64`：x86_64 便携压缩包；
    - `dsh-offline-linux-arm64`：ARM64 便携压缩包；
    - `dsh-offline-docker-linux-x64`：x86_64 Docker 离线镜像；
-   - `dsh-offline-docker-linux-arm64`：ARM64 Docker 离线镜像。
+   - `dsh-offline-docker-linux-arm64`：ARM64 Docker 离线镜像；
+   - `dsh-offline-windows-x64`：Windows x86_64 非 Docker 便携包。
 
 ## 内网运行：便携压缩包
 
@@ -64,6 +66,32 @@ cd dsh-offline
 浏览器访问：`http://127.0.0.1:3080`
 
 官方 DSH 为防止远程代码执行，便携版只允许监听 `127.0.0.1`，不能直接设置 `DSH_HOST=0.0.0.0`。需要可信内网其他设备访问时，请使用下方 Docker 版；Docker 镜像内置 Nginx，将外部 `0.0.0.0:3080` 安全转发到只监听本地的 DSH。
+
+## Windows x86_64 非 Docker 版
+
+下载 `dsh-offline-windows-x64`，解压 GitHub Artifact 后得到：
+
+```text
+dsh-offline-windows-x64.7z
+dsh-offline-windows-x64.7z.sha256
+```
+
+使用 7-Zip 解压到短路径，例如 `C:\dsh`，然后依次双击：
+
+```text
+verify.cmd
+start.cmd
+```
+
+浏览器访问：`http://127.0.0.1:3080`。
+
+也可以在 PowerShell 中指定工作目录：
+
+```powershell
+.\start.ps1 -Workspace 'D:\projects' -Port 3080
+```
+
+Windows 包内已包含 `node.exe`、DSH、pnpm、WebUI 插件及 Windows 原生依赖，不需要另外安装 Node.js。
 
 ## 内网运行：Docker 离线镜像
 
