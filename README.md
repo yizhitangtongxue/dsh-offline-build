@@ -85,10 +85,10 @@ start.cmd
 
 浏览器访问：`http://127.0.0.1:3080`。
 
-也可以在 PowerShell 中指定工作目录：
+也可以指定工作目录和端口；推荐调用 `start.cmd`，它只对本次进程使用 `ExecutionPolicy Bypass`，不会修改系统策略：
 
 ```powershell
-.\start.ps1 -Workspace 'D:\projects' -Port 3080
+.\start.cmd -Workspace 'D:\projects' -Port 3080
 ```
 
 Windows 包内已包含 `node.exe`、DSH、pnpm、WebUI 插件及 Windows 原生依赖，不需要另外安装 Node.js。

@@ -16,10 +16,10 @@ if (Test-Path $Plugin) { $Plugin = (Resolve-Path $Plugin).Path }
 & $Node $Cli plugin --profile web add --offline $Plugin
 if ($LASTEXITCODE -ne 0) {
   & $Node $Cli plugin --profile web approve-builds --all
-  if ($LASTEXITCODE -ne 0) { throw "原生依赖审批失败" }
+  if ($LASTEXITCODE -ne 0) { throw "Native dependency approval failed" }
   & $Node $Cli plugin --profile web add --offline $Plugin
-  if ($LASTEXITCODE -ne 0) { throw "插件离线安装失败：$Plugin" }
+  if ($LASTEXITCODE -ne 0) { throw "Offline plugin install failed: $Plugin" }
 }
 
-Write-Host "插件安装完成：$Plugin"
-Write-Host "请重新启动 DSH。"
+Write-Host "Plugin installed: $Plugin"
+Write-Host "Restart DSH to load the plugin."

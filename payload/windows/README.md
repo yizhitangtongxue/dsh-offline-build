@@ -32,10 +32,10 @@ start.cmd
 http://127.0.0.1:3080
 ```
 
-指定工作目录和端口：
+指定工作目录和端口；推荐调用 `start.cmd`，它不会修改系统级执行策略：
 
 ```powershell
-.\start.ps1 -Workspace 'D:\projects' -Port 3080
+.\start.cmd -Workspace 'D:\projects' -Port 3080
 ```
 
 为了防止远程代码执行，DSH 只监听 `127.0.0.1`。Windows 便携版默认只供本机浏览器访问。

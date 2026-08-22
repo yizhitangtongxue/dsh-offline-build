@@ -615,14 +615,14 @@ jobs:
           Credentials embedded: none
           "@ | Set-Content -Encoding UTF8 bundle-windows/BUILD-INFO.txt
 
-          & bundle-windows/verify.ps1
-          if ($LASTEXITCODE -ne 0) { throw 'Windows verification failed' }
+          & powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File bundle-windows\verify.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'Windows PowerShell 5.1 verification failed' }
 
           $env:DSH_WORKSPACE = $env:GITHUB_WORKSPACE
           $env:DSH_PORT = '13085'
           $stdout = Join-Path $env:RUNNER_TEMP 'dsh-windows-smoke.out.log'
           $stderr = Join-Path $env:RUNNER_TEMP 'dsh-windows-smoke.err.log'
-          $proc = Start-Process -FilePath $Node -ArgumentList @($Cli, 'web', '--host', '127.0.0.1', '--port', '13085', '--no-open') -WorkingDirectory $env:GITHUB_WORKSPACE -RedirectStandardOutput $stdout -RedirectStandardError $stderr -PassThru -NoNewWindow
+          $proc = Start-Process -FilePath powershell.exe -ArgumentList @('-NoLogo', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', (Join-Path $Root 'start.ps1'), '-Workspace', $env:GITHUB_WORKSPACE, '-Port', '13085') -WorkingDirectory $env:GITHUB_WORKSPACE -RedirectStandardOutput $stdout -RedirectStandardError $stderr -PassThru -NoNewWindow
           try {
             $ok = $false
             foreach ($i in 1..45) {
@@ -671,8 +671,8 @@ jobs:
           New-Item -ItemType Directory -Force extracted-windows | Out-Null
           & $SevenZip x $Archive "-o$env:GITHUB_WORKSPACE\extracted-windows" -y
           if ($LASTEXITCODE -ne 0) { throw '7-Zip extraction failed' }
-          & extracted-windows/verify.ps1
-          if ($LASTEXITCODE -ne 0) { throw 'Extracted Windows bundle verification failed' }
+          & powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File extracted-windows\verify.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'Extracted Windows PowerShell 5.1 verification failed' }
 
           $CleanRoot = (Resolve-Path extracted-windows).Path
           $env:DSH_HOME = Join-Path $CleanRoot 'dsh-home'
@@ -681,7 +681,7 @@ jobs:
           $CleanCli = Join-Path $CleanRoot 'runtime\node_modules\@deepseek-ai\dsh\lib\bin.js'
           $cleanOut = Join-Path $env:RUNNER_TEMP 'dsh-windows-clean.out.log'
           $cleanErr = Join-Path $env:RUNNER_TEMP 'dsh-windows-clean.err.log'
-          $cleanProc = Start-Process -FilePath $CleanNode -ArgumentList @($CleanCli, 'web', '--host', '127.0.0.1', '--port', '13086', '--no-open') -WorkingDirectory $CleanRoot -RedirectStandardOutput $cleanOut -RedirectStandardError $cleanErr -PassThru -NoNewWindow
+          $cleanProc = Start-Process -FilePath powershell.exe -ArgumentList @('-NoLogo', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', (Join-Path $CleanRoot 'start.ps1'), '-Workspace', $CleanRoot, '-Port', '13086') -WorkingDirectory $CleanRoot -RedirectStandardOutput $cleanOut -RedirectStandardError $cleanErr -PassThru -NoNewWindow
           try {
             $cleanOk = $false
             foreach ($i in 1..45) {
