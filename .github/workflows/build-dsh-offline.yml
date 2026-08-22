@@ -302,8 +302,15 @@ jobs:
       - name: Checkout builder repository
         uses: actions/checkout@v4
 
-      - name: Setup Docker Buildx on native ARM64 runner
-        uses: docker/setup-buildx-action@v3
+      - name: Setup Node.js 22 on native ARM64 runner
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: "${{ env.PNPM_VERSION }}"
 
       - name: Write optional extra plugin list
         shell: bash
@@ -314,24 +321,92 @@ jobs:
           printf '%s\n' "${EXTRA_PLUGINS:-}" > docker/extra-plugins.txt
           echo "Extra plugin lines: $(grep -cv '^\s*$' docker/extra-plugins.txt || true)"
 
-      - name: Build ARM64 portable bundle natively
+      - name: Build and smoke-test ARM64 portable bundle natively
         shell: bash
+        env:
+          EXTRA_PLUGINS: ${{ inputs.extra_plugins }}
         run: |
           set -euo pipefail
-          docker buildx build \
-            --platform linux/arm64 \
-            --file Dockerfile.portable \
-            --target export \
-            --build-arg DSH_VERSION="$DSH_VERSION" \
-            --build-arg DSH_WEBUI_VERSION="$DSH_WEBUI_VERSION" \
-            --output type=local,dest=arm64-bundle \
-            .
+          [[ "$(uname -m)" = aarch64 ]]
+          echo "Native runner architecture: $(uname -m)"
 
-          file arm64-bundle/bin/node
-          file arm64-bundle/bin/node | grep -Eqi 'ARM aarch64|ARM64'
-          grep -q 'Target: linux-arm64' arm64-bundle/BUILD-INFO.txt
+          mkdir -p arm64-bundle/runtime arm64-bundle/dsh-home arm64-bundle/bin arm64-bundle/offline-plugins
+          cp payload/runtime-package.json arm64-bundle/runtime/package.json
+          cp payload/runtime-pnpm-workspace.yaml arm64-bundle/runtime/pnpm-workspace.yaml
+          cp payload/start.sh arm64-bundle/start.sh
+          cp payload/install-plugin-offline.sh arm64-bundle/install-plugin-offline.sh
+          cp payload/verify.sh arm64-bundle/verify.sh
+          cp payload/README-OFFLINE.md arm64-bundle/README.md
+          cp payload/pnpm-wrapper.sh arm64-bundle/bin/pnpm
+          cp -L "$(command -v node)" arm64-bundle/bin/node
+          chmod +x arm64-bundle/start.sh arm64-bundle/install-plugin-offline.sh \
+            arm64-bundle/verify.sh arm64-bundle/bin/node arm64-bundle/bin/pnpm
+          file arm64-bundle/bin/node | tee /tmp/arm64-node-file.txt
+          grep -Eqi 'ARM aarch64|ARM64' /tmp/arm64-node-file.txt
+
+          (
+            cd arm64-bundle/runtime
+            pnpm install --prod --frozen-lockfile=false --config.minimum-release-age=0
+          )
+
+          export DSH_HOME="$GITHUB_WORKSPACE/arm64-bundle/dsh-home"
+          export PATH="$GITHUB_WORKSPACE/arm64-bundle/bin:$PATH"
+          NODE="$GITHUB_WORKSPACE/arm64-bundle/bin/node"
+          CLI="$GITHUB_WORKSPACE/arm64-bundle/runtime/node_modules/@deepseek-ai/dsh/lib/bin.js"
+
+          install_plugin() {
+            local pkg="$1"
+            set +e
+            "$NODE" "$CLI" plugin --profile web add --config.minimum-release-age=0 "$pkg"
+            local rc=$?
+            set -e
+            if [[ $rc -ne 0 ]]; then
+              "$NODE" "$CLI" plugin --profile web approve-builds --all
+              "$NODE" "$CLI" plugin --profile web add --config.minimum-release-age=0 "$pkg"
+            fi
+          }
+
+          install_plugin "@linxin666/dsh-web-ui-all@$DSH_WEBUI_VERSION"
+          while IFS= read -r plugin; do
+            plugin="${plugin%%#*}"
+            plugin="$(echo "$plugin" | xargs)"
+            [[ -z "$plugin" ]] || install_plugin "$plugin"
+          done <<< "${EXTRA_PLUGINS:-}"
+
+          WEBUI_COMMIT="$(git ls-remote https://github.com/zhu1090093659/dsh-web-ui.git refs/heads/dev | cut -f1)"
+          cat > arm64-bundle/BUILD-INFO.txt <<EOF
+          Built at (UTC): $(date -u +'%Y-%m-%dT%H:%M:%SZ')
+          Target: linux-arm64 (native GitHub ubuntu-24.04-arm runner)
+          Node: $($NODE --version)
+          pnpm: $(pnpm --version)
+          DeepSeek Harness: $DSH_VERSION
+          dsh-web-ui repository: https://github.com/zhu1090093659/dsh-web-ui.git
+          dsh-web-ui dev commit: $WEBUI_COMMIT
+          dsh-web-ui aggregate package: @linxin666/dsh-web-ui-all@$DSH_WEBUI_VERSION
+          Credentials embedded: none
+          EOF
+
+          arm64-bundle/verify.sh
           grep -q '@linxin666/dsh-web-ui-all' arm64-bundle/dsh-home/profiles/web/package.json
-          echo "ARM64 portable build and in-build WebUI smoke test passed."
+
+          DSH_HOST=127.0.0.1 DSH_PORT=13084 DSH_WORKSPACE="$GITHUB_WORKSPACE" \
+            arm64-bundle/start.sh >/tmp/dsh-arm64-smoke.log 2>&1 &
+          pid=$!
+          trap 'kill $pid 2>/dev/null || true' EXIT
+          ok=0
+          for _ in $(seq 1 45); do
+            if curl --fail --silent http://127.0.0.1:13084/ >/tmp/dsh-arm64-index.html; then
+              ok=1
+              break
+            fi
+            if ! kill -0 "$pid" 2>/dev/null; then break; fi
+            sleep 2
+          done
+          cat /tmp/dsh-arm64-smoke.log
+          [[ $ok -eq 1 ]]
+          grep -q '<title>DeepSeek Harness</title>' /tmp/dsh-arm64-index.html
+          ! grep -q 'Failed to load plugins' /tmp/dsh-arm64-smoke.log
+          echo "Native ARM64 portable smoke test passed."
 
       - name: Package ARM64 portable artifact
         shell: bash
@@ -355,12 +430,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          docker buildx build \
-            --platform linux/arm64 \
+          docker build \
             --build-arg DSH_VERSION="$DSH_VERSION" \
             --build-arg DSH_WEBUI_VERSION="$DSH_WEBUI_VERSION" \
             --tag dsh-offline-webui:arm64 \
-            --load \
             .
 
           [[ "$(docker image inspect dsh-offline-webui:arm64 --format '{{.Architecture}}')" = arm64 ]]
