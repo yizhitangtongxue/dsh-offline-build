@@ -8,18 +8,53 @@ on:
         required: false
         type: string
         default: ""
-  schedule:
-    - cron: "0 2 * * 0"
-
 permissions:
-  contents: read
+  contents: write
+  actions: write
 
 env:
   PNPM_VERSION: "11.22.0"
 
 jobs:
+  prepare-release:
+    name: Prepare draft GitHub Release
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    outputs:
+      release_tag: ${{ steps.release.outputs.release_tag }}
+
+    steps:
+      - name: Checkout builder repository
+        uses: actions/checkout@v4
+
+      - name: Load pinned upstream versions
+        shell: bash
+        run: cat .github/upstream-versions.env >> "$GITHUB_ENV"
+
+      - name: Create draft release
+        id: release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          base="dsh-${DSH_VERSION}-webui-${DSH_WEBUI_VERSION}"
+          tag="$base"
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            tag="${base}-build.${GITHUB_RUN_NUMBER}"
+          fi
+          gh release create "$tag" \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "DSH ${DSH_VERSION} + WebUI ${DSH_WEBUI_VERSION} offline bundles" \
+            --notes "GitHub-built offline bundles for Linux x64, Linux ARM64, Windows x64, and Docker. No credentials are embedded. Source commit: ${GITHUB_SHA}." \
+            --draft
+          echo "release_tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "Draft release prepared: $tag"
+
   build-linux-x64:
     name: Build Linux x86_64 offline bundle
+    needs: prepare-release
     runs-on: ubuntu-22.04
     timeout-minutes: 60
 
@@ -180,18 +215,21 @@ jobs:
           sha256sum dsh-offline-linux-x64.tar.gz > dsh-offline-linux-x64.tar.gz.sha256
           ls -lh dsh-offline-linux-x64.tar.gz dsh-offline-linux-x64.tar.gz.sha256
 
-      - name: Upload offline artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: dsh-offline-linux-x64
-          path: |
-            dsh-offline-linux-x64.tar.gz
-            dsh-offline-linux-x64.tar.gz.sha256
-          retention-days: 30
-          if-no-files-found: error
+      - name: Upload Linux x64 bundle to draft release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.prepare-release.outputs.release_tag }}
+        run: |
+          set -euo pipefail
+          gh release upload "$RELEASE_TAG" \
+            dsh-offline-linux-x64.tar.gz \
+            dsh-offline-linux-x64.tar.gz.sha256 \
+            --repo "$GITHUB_REPOSITORY" --clobber
 
   build-docker-linux-x64:
     name: Build and verify Docker offline image
+    needs: prepare-release
     runs-on: ubuntu-22.04
     timeout-minutes: 60
 
@@ -288,19 +326,22 @@ jobs:
           cp docker-compose.yml docker-compose.offline.yml
           ls -lh dsh-offline-docker-linux-x64.tar.gz dsh-offline-docker-linux-x64.tar.gz.sha256
 
-      - name: Upload Docker image artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: dsh-offline-docker-linux-x64
-          path: |
-            dsh-offline-docker-linux-x64.tar.gz
-            dsh-offline-docker-linux-x64.tar.gz.sha256
-            docker-compose.offline.yml
-          retention-days: 30
-          if-no-files-found: error
+      - name: Upload Docker x64 image to draft release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.prepare-release.outputs.release_tag }}
+        run: |
+          set -euo pipefail
+          gh release upload "$RELEASE_TAG" \
+            dsh-offline-docker-linux-x64.tar.gz \
+            dsh-offline-docker-linux-x64.tar.gz.sha256 \
+            docker-compose.offline.yml \
+            --repo "$GITHUB_REPOSITORY" --clobber
 
   build-linux-arm64:
     name: Build and verify Linux ARM64 bundles (native runner)
+    needs: prepare-release
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 60
 
@@ -426,15 +467,17 @@ jobs:
           sha256sum dsh-offline-linux-arm64.tar.gz > dsh-offline-linux-arm64.tar.gz.sha256
           ls -lh dsh-offline-linux-arm64.tar.gz dsh-offline-linux-arm64.tar.gz.sha256
 
-      - name: Upload ARM64 portable artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: dsh-offline-linux-arm64
-          path: |
-            dsh-offline-linux-arm64.tar.gz
-            dsh-offline-linux-arm64.tar.gz.sha256
-          retention-days: 30
-          if-no-files-found: error
+      - name: Upload Linux ARM64 bundle to draft release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.prepare-release.outputs.release_tag }}
+        run: |
+          set -euo pipefail
+          gh release upload "$RELEASE_TAG" \
+            dsh-offline-linux-arm64.tar.gz \
+            dsh-offline-linux-arm64.tar.gz.sha256 \
+            --repo "$GITHUB_REPOSITORY" --clobber
 
       - name: Build ARM64 Docker image natively
         shell: bash
@@ -516,19 +559,22 @@ jobs:
           sed -i 's/dsh-offline-webui:latest/dsh-offline-webui:arm64/' docker-compose.arm64.offline.yml
           ls -lh dsh-offline-docker-linux-arm64.tar.gz dsh-offline-docker-linux-arm64.tar.gz.sha256
 
-      - name: Upload ARM64 Docker artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: dsh-offline-docker-linux-arm64
-          path: |
-            dsh-offline-docker-linux-arm64.tar.gz
-            dsh-offline-docker-linux-arm64.tar.gz.sha256
-            docker-compose.arm64.offline.yml
-          retention-days: 30
-          if-no-files-found: error
+      - name: Upload Docker ARM64 image to draft release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.prepare-release.outputs.release_tag }}
+        run: |
+          set -euo pipefail
+          gh release upload "$RELEASE_TAG" \
+            dsh-offline-docker-linux-arm64.tar.gz \
+            dsh-offline-docker-linux-arm64.tar.gz.sha256 \
+            docker-compose.arm64.offline.yml \
+            --repo "$GITHUB_REPOSITORY" --clobber
 
   build-windows-x64:
     name: Build and verify Windows x64 portable bundle
+    needs: prepare-release
     runs-on: windows-2022
     timeout-minutes: 60
 
@@ -729,12 +775,80 @@ jobs:
           Get-Item $Archive | Select-Object Name,Length
           Write-Host "SHA256=$hash"
 
-      - name: Upload Windows portable artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: dsh-offline-windows-x64
-          path: |
-            dsh-offline-windows-x64.7z
-            dsh-offline-windows-x64.7z.sha256
-          retention-days: 30
-          if-no-files-found: error
+      - name: Upload Windows x64 bundle to draft release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.prepare-release.outputs.release_tag }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          gh release upload $env:RELEASE_TAG `
+            dsh-offline-windows-x64.7z `
+            dsh-offline-windows-x64.7z.sha256 `
+            --repo $env:GITHUB_REPOSITORY --clobber
+          if ($LASTEXITCODE -ne 0) { throw 'Release asset upload failed' }
+
+  finalize-release:
+    name: Publish verified release or remove failed draft
+    if: always() && needs.prepare-release.result == 'success'
+    needs:
+      - prepare-release
+      - build-linux-x64
+      - build-docker-linux-x64
+      - build-linux-arm64
+      - build-windows-x64
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+
+    steps:
+      - name: Publish only when every platform passed
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.prepare-release.outputs.release_tag }}
+          LINUX_X64_RESULT: ${{ needs.build-linux-x64.result }}
+          DOCKER_X64_RESULT: ${{ needs.build-docker-linux-x64.result }}
+          ARM64_RESULT: ${{ needs.build-linux-arm64.result }}
+          WINDOWS_RESULT: ${{ needs.build-windows-x64.result }}
+        run: |
+          set -euo pipefail
+          if [[ "$LINUX_X64_RESULT" == success \
+             && "$DOCKER_X64_RESULT" == success \
+             && "$ARM64_RESULT" == success \
+             && "$WINDOWS_RESULT" == success ]]; then
+            gh release edit "$RELEASE_TAG" \
+              --repo "$GITHUB_REPOSITORY" --draft=false --latest
+            echo "Published verified release: $RELEASE_TAG"
+          else
+            echo "At least one platform failed; deleting draft release $RELEASE_TAG" >&2
+            gh release delete "$RELEASE_TAG" \
+              --repo "$GITHUB_REPOSITORY" --cleanup-tag --yes || true
+            exit 1
+          fi
+
+  delete-actions-artifacts:
+    name: Delete all Actions Artifacts after Release publication
+    needs: finalize-release
+    if: needs.finalize-release.result == 'success'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+
+    steps:
+      - name: Delete every repository Actions Artifact
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mapfile -t ids < <(
+            gh api --paginate \
+              "repos/$GITHUB_REPOSITORY/actions/artifacts?per_page=100" \
+              --jq '.artifacts[].id'
+          )
+          echo "Deleting ${#ids[@]} Actions Artifacts"
+          for id in "${ids[@]}"; do
+            gh api --method DELETE "repos/$GITHUB_REPOSITORY/actions/artifacts/$id"
+          done
+          remaining="$(gh api "repos/$GITHUB_REPOSITORY/actions/artifacts?per_page=1" --jq '.total_count')"
+          [[ "$remaining" == 0 ]]
+          echo "Actions Artifact count: 0"

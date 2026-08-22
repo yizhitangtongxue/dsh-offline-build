@@ -43,12 +43,14 @@ ARM64 版本由 GitHub Actions 的原生 `ubuntu-24.04-arm` Runner 构建，在�
 3. 点击 **Run workflow**；
 4. 可在 `extra_plugins` 中填写希望预装的额外 npm 插件，一行一个；
 5. 等待四个构建任务完成真实 WebUI 启动测试；
-6. 按机器架构和运行方式下载 Artifact：
+6. 打开仓库的 **Releases → Latest**，按机器架构和运行方式下载：
    - `dsh-offline-linux-x64`：x86_64 便携压缩包；
    - `dsh-offline-linux-arm64`：ARM64 便携压缩包；
    - `dsh-offline-docker-linux-x64`：x86_64 Docker 离线镜像；
    - `dsh-offline-docker-linux-arm64`：ARM64 Docker 离线镜像；
    - `dsh-offline-windows-x64`：Windows x86_64 非 Docker 便携包。
+
+大型离线包直接上传到 GitHub Release，不使用 Actions Artifact 存储。只有五个平台全部构建和冒烟测试成功，Draft Release 才会正式发布；任一平台失败都会删除草稿。发布成功后，workflow 还会清空仓库中遗留的全部 Actions Artifact，避免产生 Artifact 存储费用。
 
 ## 自动跟踪上游更新
 
@@ -63,7 +65,7 @@ ARM64 版本由 GitHub Actions 的原生 `ubuntu-24.04-arm` Runner 构建，在�
 
 ## 内网运行：便携压缩包
 
-解压下载的 Artifact，再解压其中的 tar.gz：
+从 GitHub Release 下载并解压 tar.gz：
 
 ```bash
 sha256sum -c dsh-offline-linux-x64.tar.gz.sha256
@@ -80,7 +82,7 @@ cd dsh-offline
 
 ## Windows x86_64 非 Docker 版
 
-下载 `dsh-offline-windows-x64`，解压 GitHub Artifact 后得到：
+从 GitHub Release 下载 Windows 文件：
 
 ```text
 dsh-offline-windows-x64.7z
@@ -154,7 +156,7 @@ docker stop dsh-webui
 docker start dsh-webui
 ```
 
-也可以使用 Artifact 附带的 Compose 文件：
+也可以使用同一 GitHub Release 附带的 Compose 文件：
 
 ```bash
 mkdir -p workspace
