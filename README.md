@@ -25,7 +25,7 @@ ARM64 版本由 GitHub Actions 的原生 `ubuntu-24.04-arm` Runner 构建，在�
 - Linux x86_64 或 ARM64；
 - Node.js 22 便携运行时；
 - `@deepseek-ai/dsh@0.1.1-rc.2`；
-- `@linxin666/dsh-web-ui-all@0.2.7`；
+- `@linxin666/dsh-web-ui-all@0.2.9`；
 - 任务看板、Git 图谱、插件管理器、右侧栏、皮肤中心、远程 UI、SSH 等聚合插件；
 - 已构建的原生依赖；
 - 离线启动、验证和本地插件安装脚本。
