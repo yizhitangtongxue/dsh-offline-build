@@ -17,7 +17,7 @@
 3. **x86_64 Docker 离线镜像** `dsh-offline-docker-linux-x64`；
 4. **ARM64 Docker 离线镜像** `dsh-offline-docker-linux-arm64`。
 
-ARM64 版本由 GitHub Actions 使用 QEMU/Buildx 在 ARM64 环境中重新安装和编译原生依赖，并真实启动 WebUI 验证，不是把 x86_64 包简单改名。
+ARM64 版本由 GitHub Actions 的原生 `ubuntu-24.04-arm` Runner 构建，在真实 ARM64 CPU 上重新安装、编译原生依赖并启动 WebUI 验证，不使用 QEMU，也不是把 x86_64 包简单改名。
 
 共同包含：
 

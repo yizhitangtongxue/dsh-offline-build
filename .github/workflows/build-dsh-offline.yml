@@ -294,20 +294,15 @@ jobs:
           if-no-files-found: error
 
   build-linux-arm64:
-    name: Build and verify Linux ARM64 bundles
-    runs-on: ubuntu-22.04
-    timeout-minutes: 120
+    name: Build and verify Linux ARM64 bundles (native runner)
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 60
 
     steps:
       - name: Checkout builder repository
         uses: actions/checkout@v4
 
-      - name: Enable ARM64 emulation
-        uses: docker/setup-qemu-action@v3
-        with:
-          platforms: arm64
-
-      - name: Setup Docker Buildx
+      - name: Setup Docker Buildx on native ARM64 runner
         uses: docker/setup-buildx-action@v3
 
       - name: Write optional extra plugin list
@@ -319,7 +314,7 @@ jobs:
           printf '%s\n' "${EXTRA_PLUGINS:-}" > docker/extra-plugins.txt
           echo "Extra plugin lines: $(grep -cv '^\s*$' docker/extra-plugins.txt || true)"
 
-      - name: Build ARM64 portable bundle under QEMU
+      - name: Build ARM64 portable bundle natively
         shell: bash
         run: |
           set -euo pipefail
@@ -356,7 +351,7 @@ jobs:
           retention-days: 30
           if-no-files-found: error
 
-      - name: Build ARM64 Docker image under QEMU
+      - name: Build ARM64 Docker image natively
         shell: bash
         run: |
           set -euo pipefail
