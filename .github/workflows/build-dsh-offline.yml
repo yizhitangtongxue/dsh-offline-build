@@ -246,6 +246,11 @@ jobs:
               ok=1
               break
             fi
+            if [[ "$(docker inspect -f '{{.State.Running}}' dsh-webui-test 2>/dev/null || true)" != true ]]; then
+              echo "Container exited before WebUI became ready" >&2
+              docker logs dsh-webui-test >&2 || true
+              exit 1
+            fi
             sleep 2
           done
           [[ $ok -eq 1 ]] || { echo "Docker WebUI failed to become ready" >&2; exit 1; }
