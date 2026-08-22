@@ -292,3 +292,159 @@ jobs:
             docker-compose.offline.yml
           retention-days: 30
           if-no-files-found: error
+
+  build-linux-arm64:
+    name: Build and verify Linux ARM64 bundles
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120
+
+    steps:
+      - name: Checkout builder repository
+        uses: actions/checkout@v4
+
+      - name: Enable ARM64 emulation
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Write optional extra plugin list
+        shell: bash
+        env:
+          EXTRA_PLUGINS: ${{ inputs.extra_plugins }}
+        run: |
+          set -euo pipefail
+          printf '%s\n' "${EXTRA_PLUGINS:-}" > docker/extra-plugins.txt
+          echo "Extra plugin lines: $(grep -cv '^\s*$' docker/extra-plugins.txt || true)"
+
+      - name: Build ARM64 portable bundle under QEMU
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker buildx build \
+            --platform linux/arm64 \
+            --file Dockerfile.portable \
+            --target export \
+            --build-arg DSH_VERSION="$DSH_VERSION" \
+            --build-arg DSH_WEBUI_VERSION="$DSH_WEBUI_VERSION" \
+            --output type=local,dest=arm64-bundle \
+            .
+
+          file arm64-bundle/bin/node
+          file arm64-bundle/bin/node | grep -Eqi 'ARM aarch64|ARM64'
+          grep -q 'Target: linux-arm64' arm64-bundle/BUILD-INFO.txt
+          grep -q '@linxin666/dsh-web-ui-all' arm64-bundle/dsh-home/profiles/web/package.json
+          echo "ARM64 portable build and in-build WebUI smoke test passed."
+
+      - name: Package ARM64 portable artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          tar -czf dsh-offline-linux-arm64.tar.gz -C arm64-bundle .
+          sha256sum dsh-offline-linux-arm64.tar.gz > dsh-offline-linux-arm64.tar.gz.sha256
+          ls -lh dsh-offline-linux-arm64.tar.gz dsh-offline-linux-arm64.tar.gz.sha256
+
+      - name: Upload ARM64 portable artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dsh-offline-linux-arm64
+          path: |
+            dsh-offline-linux-arm64.tar.gz
+            dsh-offline-linux-arm64.tar.gz.sha256
+          retention-days: 30
+          if-no-files-found: error
+
+      - name: Build ARM64 Docker image under QEMU
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker buildx build \
+            --platform linux/arm64 \
+            --build-arg DSH_VERSION="$DSH_VERSION" \
+            --build-arg DSH_WEBUI_VERSION="$DSH_WEBUI_VERSION" \
+            --tag dsh-offline-webui:arm64 \
+            --load \
+            .
+
+          [[ "$(docker image inspect dsh-offline-webui:arm64 --format '{{.Architecture}}')" = arm64 ]]
+          docker image inspect dsh-offline-webui:arm64 \
+            --format 'architecture={{.Architecture}} image={{.Id}} size={{.Size}} bytes'
+
+      - name: Verify ARM64 container and workspace mount
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p docker-test-workspace-arm64
+          printf 'mounted-from-arm64-host-test\n' > docker-test-workspace-arm64/MOUNT_TEST.txt
+          docker volume create dsh-test-data-arm64 >/dev/null
+
+          docker run -d --platform linux/arm64 --name dsh-webui-test-arm64 \
+            -p 13083:3080 \
+            -v "$GITHUB_WORKSPACE/docker-test-workspace-arm64:/workspace" \
+            -v dsh-test-data-arm64:/data \
+            dsh-offline-webui:arm64 >/tmp/dsh-container-id-arm64
+
+          cleanup() {
+            docker logs dsh-webui-test-arm64 || true
+            docker rm -f dsh-webui-test-arm64 >/dev/null 2>&1 || true
+            docker volume rm dsh-test-data-arm64 >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+
+          ok=0
+          for _ in $(seq 1 90); do
+            if curl --fail --silent http://127.0.0.1:13083/ > /tmp/dsh-docker-index-arm64.html; then
+              ok=1
+              break
+            fi
+            if [[ "$(docker inspect -f '{{.State.Running}}' dsh-webui-test-arm64 2>/dev/null || true)" != true ]]; then
+              echo "ARM64 container exited before WebUI became ready" >&2
+              docker logs dsh-webui-test-arm64 >&2 || true
+              exit 1
+            fi
+            sleep 2
+          done
+          [[ $ok -eq 1 ]] || { echo "ARM64 Docker WebUI failed to become ready" >&2; exit 1; }
+          grep -q '<title>DeepSeek Harness</title>' /tmp/dsh-docker-index-arm64.html
+          docker exec dsh-webui-test-arm64 test -f /workspace/MOUNT_TEST.txt
+          [[ "$(docker exec dsh-webui-test-arm64 cat /workspace/MOUNT_TEST.txt)" = mounted-from-arm64-host-test ]]
+          docker exec dsh-webui-test-arm64 test -f /data/profiles/web/package.json
+          docker exec dsh-webui-test-arm64 grep -q '@linxin666/dsh-web-ui-all' /data/profiles/web/package.json
+          ! docker logs dsh-webui-test-arm64 2>&1 | grep -q 'Failed to load plugins'
+          echo "ARM64 Docker test passed: HTTP 200, WebUI loaded, workspace mount visible."
+
+      - name: Check ARM64 image contains no credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker history --no-trunc dsh-offline-webui:arm64 > /tmp/docker-history-arm64.txt
+          if grep -E 'github_pat_|ghp_[A-Za-z0-9]|DEEPSEEK_API_KEY=' /tmp/docker-history-arm64.txt; then
+            echo "Credential-like value found in ARM64 image history" >&2
+            exit 1
+          fi
+          echo "No credential values found in ARM64 Docker history."
+
+      - name: Export ARM64 Docker image
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker tag dsh-offline-webui:arm64 dsh-offline-webui:latest-arm64
+          docker save dsh-offline-webui:arm64 dsh-offline-webui:latest-arm64 \
+            | gzip -1 > dsh-offline-docker-linux-arm64.tar.gz
+          sha256sum dsh-offline-docker-linux-arm64.tar.gz > dsh-offline-docker-linux-arm64.tar.gz.sha256
+          cp docker-compose.yml docker-compose.arm64.offline.yml
+          sed -i 's/dsh-offline-webui:latest/dsh-offline-webui:arm64/' docker-compose.arm64.offline.yml
+          ls -lh dsh-offline-docker-linux-arm64.tar.gz dsh-offline-docker-linux-arm64.tar.gz.sha256
+
+      - name: Upload ARM64 Docker artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dsh-offline-docker-linux-arm64
+          path: |
+            dsh-offline-docker-linux-arm64.tar.gz
+            dsh-offline-docker-linux-arm64.tar.gz.sha256
+            docker-compose.arm64.offline.yml
+          retention-days: 30
+          if-no-files-found: error

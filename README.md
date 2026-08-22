@@ -10,14 +10,18 @@
 
 ## 当前构建内容
 
-每次 Actions 会同时生成两个版本：
+每次 Actions 会同时生成四个版本：
 
-1. **便携压缩包** `dsh-offline-linux-x64`：无需 Docker，解压后运行 `start.sh`；
-2. **Docker 离线镜像** `dsh-offline-docker-linux-x64`：内网执行 `docker load` 后运行。
+1. **x86_64 便携压缩包** `dsh-offline-linux-x64`：无需 Docker，解压后运行 `start.sh`；
+2. **ARM64 便携压缩包** `dsh-offline-linux-arm64`：适用于 ARM64 Linux，解压后运行 `start.sh`；
+3. **x86_64 Docker 离线镜像** `dsh-offline-docker-linux-x64`；
+4. **ARM64 Docker 离线镜像** `dsh-offline-docker-linux-arm64`。
+
+ARM64 版本由 GitHub Actions 使用 QEMU/Buildx 在 ARM64 环境中重新安装和编译原生依赖，并真实启动 WebUI 验证，不是把 x86_64 包简单改名。
 
 共同包含：
 
-- Linux x86_64；
+- Linux x86_64 或 ARM64；
 - Node.js 22 便携运行时；
 - `@deepseek-ai/dsh@0.1.1-rc.2`；
 - `@linxin666/dsh-web-ui-all@0.2.7`；
@@ -37,10 +41,12 @@
 2. 选择 **Build DSH Offline Bundle**；
 3. 点击 **Run workflow**；
 4. 可在 `extra_plugins` 中填写希望预装的额外 npm 插件，一行一个；
-5. 等待两个任务完成真实 WebUI 启动测试；
-6. 按需要下载 Artifact：
-   - `dsh-offline-linux-x64`：便携压缩包；
-   - `dsh-offline-docker-linux-x64`：Docker 离线镜像。
+5. 等待三个构建任务完成真实 WebUI 启动测试；
+6. 按机器架构和运行方式下载 Artifact：
+   - `dsh-offline-linux-x64`：x86_64 便携压缩包；
+   - `dsh-offline-linux-arm64`：ARM64 便携压缩包；
+   - `dsh-offline-docker-linux-x64`：x86_64 Docker 离线镜像；
+   - `dsh-offline-docker-linux-arm64`：ARM64 Docker 离线镜像。
 
 ## 内网运行：便携压缩包
 
@@ -61,11 +67,19 @@ cd dsh-offline
 
 ## 内网运行：Docker 离线镜像
 
-校验并导入镜像：
+校验并导入镜像。x86_64 使用：
 
 ```bash
 sha256sum -c dsh-offline-docker-linux-x64.tar.gz.sha256
 gzip -dc dsh-offline-docker-linux-x64.tar.gz | docker load
+```
+
+ARM64 使用：
+
+```bash
+sha256sum -c dsh-offline-docker-linux-arm64.tar.gz.sha256
+gzip -dc dsh-offline-docker-linux-arm64.tar.gz | docker load
+docker tag dsh-offline-webui:arm64 dsh-offline-webui:latest
 ```
 
 挂载一个宿主机目录到容器的 `/workspace`：
