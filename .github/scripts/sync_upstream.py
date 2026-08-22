@@ -53,16 +53,16 @@ def main() -> int:
     args = parser.parse_args()
 
     root = args.root.resolve()
-    workflow = root / ".github/workflows/build-dsh-offline.yml"
+    version_file = root / ".github/upstream-versions.env"
     runtime_package = root / "payload/runtime-package.json"
     dockerfile = root / "Dockerfile"
     readme = root / "README.md"
 
-    workflow_text = workflow.read_text(encoding="utf-8")
-    current_dsh_match = re.search(r'^\s*DSH_VERSION:\s*"([^"]+)"', workflow_text, re.MULTILINE)
-    current_webui_match = re.search(r'^\s*DSH_WEBUI_VERSION:\s*"([^"]+)"', workflow_text, re.MULTILINE)
+    version_text = version_file.read_text(encoding="utf-8")
+    current_dsh_match = re.search(r'^DSH_VERSION=([^\s]+)$', version_text, re.MULTILINE)
+    current_webui_match = re.search(r'^DSH_WEBUI_VERSION=([^\s]+)$', version_text, re.MULTILINE)
     if not current_dsh_match or not current_webui_match:
-        raise RuntimeError("Could not read pinned versions from build workflow")
+        raise RuntimeError("Could not read pinned versions from upstream-versions.env")
 
     old_dsh = current_dsh_match.group(1)
     old_webui = current_webui_match.group(1)
@@ -76,11 +76,20 @@ def main() -> int:
     changed_files: list[str] = []
 
     if changed and not args.dry_run:
-        if replace_regex(workflow, r'^(\s*DSH_VERSION:\s*")[^"]+("\s*)$', rf"\g<1>{new_dsh}\g<2>", 1):
-            changed_files.append(str(workflow.relative_to(root)))
-        if replace_regex(workflow, r'^(\s*DSH_WEBUI_VERSION:\s*")[^"]+("\s*)$', rf"\g<1>{new_webui}\g<2>", 1):
-            if str(workflow.relative_to(root)) not in changed_files:
-                changed_files.append(str(workflow.relative_to(root)))
+        version_changed = False
+        if old_dsh != new_dsh:
+            version_changed |= replace_regex(
+                version_file, r'^DSH_VERSION=.*$', f"DSH_VERSION={new_dsh}", 1
+            )
+        if old_webui != new_webui:
+            version_changed |= replace_regex(
+                version_file,
+                r'^DSH_WEBUI_VERSION=.*$',
+                f"DSH_WEBUI_VERSION={new_webui}",
+                1,
+            )
+        if version_changed:
+            changed_files.append(str(version_file.relative_to(root)))
 
         package_data = json.loads(runtime_package.read_text(encoding="utf-8"))
         if package_data["dependencies"][PACKAGES["dsh"]] != new_dsh:

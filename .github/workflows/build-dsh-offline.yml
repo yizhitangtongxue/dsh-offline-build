@@ -15,8 +15,6 @@ permissions:
   contents: read
 
 env:
-  DSH_VERSION: "0.1.1-rc.2"
-  DSH_WEBUI_VERSION: "0.2.7"
   PNPM_VERSION: "11.22.0"
 
 jobs:
@@ -28,6 +26,10 @@ jobs:
     steps:
       - name: Checkout builder repository
         uses: actions/checkout@v4
+
+      - name: Load pinned upstream versions
+        shell: bash
+        run: cat .github/upstream-versions.env >> "$GITHUB_ENV"
 
       - name: Setup Node.js 22
         uses: actions/setup-node@v4
@@ -197,6 +199,10 @@ jobs:
       - name: Checkout builder repository
         uses: actions/checkout@v4
 
+      - name: Load pinned upstream versions
+        shell: bash
+        run: cat .github/upstream-versions.env >> "$GITHUB_ENV"
+
       - name: Write optional extra plugin list
         shell: bash
         env:
@@ -301,6 +307,10 @@ jobs:
     steps:
       - name: Checkout builder repository
         uses: actions/checkout@v4
+
+      - name: Load pinned upstream versions
+        shell: bash
+        run: cat .github/upstream-versions.env >> "$GITHUB_ENV"
 
       - name: Setup Node.js 22 on native ARM64 runner
         uses: actions/setup-node@v4
@@ -525,6 +535,10 @@ jobs:
     steps:
       - name: Checkout builder repository
         uses: actions/checkout@v4
+
+      - name: Load pinned upstream versions
+        shell: bash
+        run: cat .github/upstream-versions.env >> "$GITHUB_ENV"
 
       - name: Setup Node.js 22
         uses: actions/setup-node@v4
