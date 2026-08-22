@@ -637,7 +637,8 @@ jobs:
             Get-Content $stderr -ErrorAction SilentlyContinue
             if (-not $ok) { throw 'Windows WebUI failed to become ready' }
             if (-not $response.Content.Contains('<title>DeepSeek Harness</title>')) { throw 'Unexpected WebUI title' }
-            $logs = ((Get-Content $stdout -Raw -ErrorAction SilentlyContinue) + (Get-Content $stderr -Raw -ErrorAction SilentlyContinue))
+            $logs = [string](Get-Content $stdout -Raw -ErrorAction SilentlyContinue)
+            $logs += [string](Get-Content $stderr -Raw -ErrorAction SilentlyContinue)
             if ($logs.Contains('Failed to load plugins')) { throw 'Plugin load failure in Windows logs' }
             Write-Host 'Windows smoke test passed: HTTP 200 and plugins loaded.'
           } finally {
@@ -682,7 +683,8 @@ jobs:
             Get-Content $cleanErr -ErrorAction SilentlyContinue
             if (-not $cleanOk) { throw 'Extracted Windows WebUI failed to become ready' }
             if (-not $cleanResponse.Content.Contains('<title>DeepSeek Harness</title>')) { throw 'Unexpected extracted WebUI title' }
-            $cleanLogs = ((Get-Content $cleanOut -Raw -ErrorAction SilentlyContinue) + (Get-Content $cleanErr -Raw -ErrorAction SilentlyContinue))
+            $cleanLogs = [string](Get-Content $cleanOut -Raw -ErrorAction SilentlyContinue)
+            $cleanLogs += [string](Get-Content $cleanErr -Raw -ErrorAction SilentlyContinue)
             if ($cleanLogs.Contains('Failed to load plugins')) { throw 'Extracted bundle plugin load failure' }
             Write-Host 'Clean-room Windows artifact smoke test passed.'
           } finally {
