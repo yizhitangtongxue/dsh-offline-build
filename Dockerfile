@@ -3,7 +3,7 @@
 FROM node:22-bookworm AS builder
 
 ARG DSH_VERSION=0.1.1-rc.2
-ARG DSH_WEBUI_VERSION=0.2.9
+ARG DSH_WEBUI_VERSION=0.3.0
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
       build-essential python3 git ca-certificates curl \
@@ -45,7 +45,7 @@ RUN set -eux; \
 FROM node:22-bookworm-slim AS runtime
 
 ARG DSH_VERSION=0.1.1-rc.2
-ARG DSH_WEBUI_VERSION=0.2.9
+ARG DSH_WEBUI_VERSION=0.3.0
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
       ca-certificates curl git openssh-client tini nginx-light \
